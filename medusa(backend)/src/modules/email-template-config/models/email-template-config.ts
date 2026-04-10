@@ -1,0 +1,28 @@
+import { model } from "@medusajs/framework/utils"
+
+export const EmailTemplateConfig = model.define("email_template_config", {
+  id: model.id().primaryKey(),
+  website_name: model.text().nullable(),
+  logo_url: model.text().nullable(),
+  support_email: model.text().nullable(),
+  contact_admin_email: model.text().nullable(),
+  order_admin_email: model.text().nullable(),
+  order_support_email: model.text().nullable(),
+  contact_url: model.text().nullable(),
+  whatsapp_url: model.text().nullable(),
+  call_url: model.text().nullable(),
+  about_url: model.text().nullable(),
+  terms_url: model.text().nullable(),
+  privacy_url: model.text().nullable(),
+  facebook_url: model.text().nullable(),
+  x_url: model.text().nullable(),
+  linkedin_url: model.text().nullable(),
+  instagram_url: model.text().nullable(),
+  social_facebook_icon: model.text().nullable(),
+  social_x_icon: model.text().nullable(),
+  social_linkedin_icon: model.text().nullable(),
+  social_instagram_icon: model.text().nullable(),
+  copyright_text: model.text().nullable(),
+  checkout_otp_email_subject: model.text().nullable(),
+  order_email_gst_rate: model.number().nullable(),
+})
