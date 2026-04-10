@@ -1389,7 +1389,7 @@ export default function Header({ categories, contactData }: HeaderProps) {
                                                         setSelectedVendor(null);
                                                     }}
                                                 >
-                                                    Show All Vouchers
+                                                    Show All Vouchers <CgChevronRight />
                                                 </li>
                                             )}
                                         </>
@@ -1411,10 +1411,18 @@ export default function Header({ categories, contactData }: HeaderProps) {
 
                 {/* fixed Bottom Buttons */}
                 <div className="menu-footer">
-                    <Link href="/voucher" className="voucher-btn">
+                    <button
+                        type="button"
+                        className="voucher-btn"
+                        onClick={() => {
+                            setMobileMenuOpen(true);
+                            setMobileDirection("forward");
+                            setMobileLevel(1);
+                            setSelectedVendor(null);
+                        }}
+                    >
                         All Vouchers <LuPlus />
-
-                    </Link>
+                    </button>
 
 
                     {/* <div

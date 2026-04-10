@@ -8966,6 +8966,12 @@ element.style {
 }
 
 
+@media (max-width: 768px) {
+  .menu-content.mobile-level ul li img {
+    transform: scale(1.6);
+  }
+}
+
 
 
 
@@ -14923,4 +14929,14 @@ input:-internal-autofill-selected {}
   align-items: center;
   justify-content: center;
   min-width: 20px;
+}
+
+.see-all-item {
+  justify-content: start !important;
+  font-weight: 600 !important;
+}
+
+.see-all-item svg {
+
+  width: 18px !important;
 }

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import ClearCheckoutLock from "./ClearCheckoutLock"
 
 type FailureSearchParams = {
     gateway?: string
@@ -35,7 +36,9 @@ export default async function PaymentFailurePage({
     const reason = reasonLabel(params?.reason)
 
     return (
-        <div className="checkout-page-wrapper thankyou-page-wrapper relative">
+        <>
+            <ClearCheckoutLock />
+            <div className="checkout-page-wrapper thankyou-page-wrapper relative">
             <div className="container-custom mx-auto">
                 <div className="w-full flex items-center justify-center">
                     <div className="checkout-user-authentication-wrapper thankyou-page">
@@ -93,6 +96,7 @@ export default async function PaymentFailurePage({
                 </div>
             </div>
         </div>
+        </>
     )
 }
 

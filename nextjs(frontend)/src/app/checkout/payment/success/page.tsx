@@ -50,41 +50,6 @@ function clearCheckoutClientState() {
   }
 }
 
-function buildClientCompletionKey(cartId: string, payload: EasebuzzPayload) {
-  const callbackKey = (payload.udf2 || "").trim()
-  if (callbackKey) {
-    return callbackKey
-  }
-
-  const seed =
-    payload.udf1 ||
-    payload.txnid ||
-    payload.udf6 ||
-    payload.udf7 ||
-    "attempt"
-  return `complete_${cartId}_${seed}`
-}
-
-async function retryCompleteCart(cartId: string, payload: EasebuzzPayload): Promise<string> {
-  try {
-    const res = await fetch("/api/checkout/complete-cart", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        cart_id: cartId,
-        idempotency_key: buildClientCompletionKey(cartId, payload),
-      }),
-      cache: "no-store",
-    })
-    const data = await res.json().catch(() => null)
-    return data?.order?.id || ""
-  } catch {
-    return ""
-  }
-}
-
 async function resolveOrderIdFromCart(cartId: string): Promise<string> {
   try {
     const cartRes = await fetch(`/api/cart/get?cart_id=${encodeURIComponent(cartId)}`, {
@@ -95,10 +60,10 @@ async function resolveOrderIdFromCart(cartId: string): Promise<string> {
     const discoveredOrderId = cartData?.cart?.order_id || cartData?.cart?.order?.id || ""
     if (!discoveredOrderId) return ""
 
-    const orderRes = await fetch(
-      `/api/cart/get?order_id=${encodeURIComponent(discoveredOrderId)}`,
-      { method: "GET", cache: "no-store" }
-    )
+    const orderRes = await fetch(`/api/cart/get?order_id=${encodeURIComponent(discoveredOrderId)}`, {
+      method: "GET",
+      cache: "no-store",
+    })
     const orderData = await orderRes.json().catch(() => null)
     return orderData?.order?.id || discoveredOrderId
   } catch {
@@ -111,7 +76,7 @@ export default function CheckoutPaymentSuccessPage() {
   const [query, setQuery] = useState<Record<string, string>>({})
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null)
   const [showFallback, setShowFallback] = useState(false)
-  const [retryingStatus, setRetryingStatus] = useState(false)
+  const [checkingStatus, setCheckingStatus] = useState(false)
 
   useEffect(() => {
     const currentSearch = window.location.search
@@ -119,17 +84,13 @@ export default function CheckoutPaymentSuccessPage() {
     const queryData = Object.fromEntries(urlParams.entries())
     const queryPayload = readPayloadFromQuery(currentSearch)
     const storagePayload = readCallbackPayload()
-    const resolvedPayload =
-      Object.keys(queryPayload).length > 0 ? queryPayload : storagePayload
+    const resolvedPayload = Object.keys(queryPayload).length > 0 ? queryPayload : storagePayload
 
     setQuery(queryData)
 
     if (Object.keys(queryPayload).length > 0) {
       try {
-        sessionStorage.setItem(
-          "easebuzz_callback_payload",
-          JSON.stringify(queryPayload)
-        )
+        sessionStorage.setItem("easebuzz_callback_payload", JSON.stringify(queryPayload))
       } catch {
         // ignore storage issues
       }
@@ -145,42 +106,15 @@ export default function CheckoutPaymentSuccessPage() {
         setShowFallback(true)
       }, 6000)
 
-      const completeStatus = queryData.complete_status || ""
-      const shouldPollOrder =
-        cartId !== "" &&
-        (completeStatus === "complete_pending" ||
-          completeStatus === "completed_without_order" ||
-          completeStatus === "completed" ||
-          completeStatus === "")
-
+      const shouldPollOrder = cartId !== ""
       let pollTimer: ReturnType<typeof setInterval> | null = null
       let attempts = 0
-      const maxAttempts = 20
-      let completionRetryAttempts = 0
-      const maxCompletionRetryAttempts = 1
-      const completionRetryStartAfterAttempts = 12
+      const maxAttempts = 40
 
       if (shouldPollOrder) {
         const runPoll = async () => {
           attempts += 1
-          let resolvedOrderId = await resolveOrderIdFromCart(cartId)
-
-          // Auto-recover pending completions by retrying server-side completion
-          // with the same idempotency key at a controlled cadence.
-          if (
-            resolvedOrderId === "" &&
-            completionRetryAttempts < maxCompletionRetryAttempts &&
-            attempts >= completionRetryStartAfterAttempts &&
-            attempts % 6 === 0
-          ) {
-            completionRetryAttempts += 1
-            const completedOrderId = await retryCompleteCart(cartId, resolvedPayload)
-            if (completedOrderId) {
-              resolvedOrderId = completedOrderId
-            } else {
-              resolvedOrderId = await resolveOrderIdFromCart(cartId)
-            }
-          }
+          const resolvedOrderId = await resolveOrderIdFromCart(cartId)
 
           if (isCancelled || resolvedOrderId === "") {
             if (attempts >= maxAttempts && pollTimer) {
@@ -241,7 +175,11 @@ export default function CheckoutPaymentSuccessPage() {
     const completeStatus = query.complete_status || ""
     const reason = query.reason || ""
 
-    if (completeStatus === "completed_without_order" || completeStatus === "complete_pending") {
+    if (
+      completeStatus === "completed_or_pending" ||
+      completeStatus === "already_completed_or_in_progress" ||
+      completeStatus === "in_progress"
+    ) {
       return "Payment is received and order confirmation is still processing."
     }
 
@@ -252,16 +190,15 @@ export default function CheckoutPaymentSuccessPage() {
     return "Payment callback received but order confirmation is taking longer than expected."
   }, [query])
 
-  const handleRetryStatus = async () => {
-    if (retryingStatus) return
+  const handleCheckStatus = async () => {
+    if (checkingStatus) return
 
-    setRetryingStatus(true)
+    setCheckingStatus(true)
     try {
       const currentSearch = window.location.search
       const queryPayload = readPayloadFromQuery(currentSearch)
       const storagePayload = readCallbackPayload()
-      const resolvedPayload =
-        Object.keys(queryPayload).length > 0 ? queryPayload : storagePayload
+      const resolvedPayload = Object.keys(queryPayload).length > 0 ? queryPayload : storagePayload
       const queryData = Object.fromEntries(new URLSearchParams(currentSearch).entries())
       const cartId = queryData.cart_id || resolvedPayload.udf5 || ""
       const txnid = queryData.txnid || resolvedPayload.txnid || ""
@@ -271,13 +208,7 @@ export default function CheckoutPaymentSuccessPage() {
         return
       }
 
-      let resolvedOrderId = await resolveOrderIdFromCart(cartId)
-      if (!resolvedOrderId) {
-        resolvedOrderId = await retryCompleteCart(cartId, resolvedPayload)
-      }
-      if (!resolvedOrderId) {
-        resolvedOrderId = await resolveOrderIdFromCart(cartId)
-      }
+      const resolvedOrderId = await resolveOrderIdFromCart(cartId)
 
       if (resolvedOrderId) {
         clearCheckoutClientState()
@@ -292,7 +223,7 @@ export default function CheckoutPaymentSuccessPage() {
 
       window.location.reload()
     } finally {
-      setRetryingStatus(false)
+      setCheckingStatus(false)
     }
   }
 
@@ -301,15 +232,17 @@ export default function CheckoutPaymentSuccessPage() {
       <div className="container-custom mx-auto min-h-[70vh] flex items-center justify-center px-4">
         <div className="max-w-lg w-full rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
           <h1 className="text-xl font-semibold text-gray-900 mb-2">Payment Successful</h1>
-          <p className="text-sm text-gray-600 mb-2">We received your payment. Order confirmation is taking longer than usual.</p>
+          <p className="text-sm text-gray-600 mb-2">
+            We received your payment. Order confirmation is taking longer than usual.
+          </p>
           <p className="text-sm text-gray-600 mb-6">{fallbackMessage}</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               className="px-4 py-2 rounded-md bg-[#23408B] text-white"
-              onClick={handleRetryStatus}
-              disabled={retryingStatus}
+              onClick={handleCheckStatus}
+              disabled={checkingStatus}
             >
-              {retryingStatus ? "Checking..." : "Check status"}
+              {checkingStatus ? "Checking..." : "Check status"}
             </button>
             <button
               className="px-4 py-2 rounded-md border border-gray-300 text-gray-700"
